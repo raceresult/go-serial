@@ -357,7 +357,9 @@ func nativeOpen(portName string, mode *Mode) (*windowsPort, error) {
 	params.Flags &= dcbRTSControlDisbaleMask
 	params.Flags |= dcbRTSControlEnable
 	params.Flags &= dcbDTRControlDisableMask
-	params.Flags |= dcbDTRControlEnable
+	if !mode.DisableDTR {
+		params.Flags |= dcbDTRControlEnable
+	}
 	params.Flags &^= dcbOutXCTSFlow
 	params.Flags &^= dcbOutXDSRFlow
 	params.Flags &^= dcbDSRSensitivity

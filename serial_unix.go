@@ -175,6 +175,13 @@ func nativeOpen(portName string, mode *Mode) (*unixPort, error) {
 
 	port.acquireExclusiveAccess()
 
+	if mode.DisableDTR {
+		if err := port.SetDTR(false); err != nil {
+			port.Close()
+			return nil, &PortError{code: InvalidSerialPort, causedBy: err}
+		}
+	}
+
 	// This pipe is used as a signal to cancel blocking Read
 	pipe := &unixutils.Pipe{}
 	if err := pipe.Open(); err != nil {

@@ -59,10 +59,11 @@ func GetPortsList() ([]string, error) {
 
 // Mode describes a serial port configuration.
 type Mode struct {
-	BaudRate int      // The serial port bitrate (aka Baudrate)
-	DataBits int      // Size of the character (must be 5, 6, 7 or 8)
-	Parity   Parity   // Parity (see Parity type for more info)
-	StopBits StopBits // Stop bits (see StopBits type for more info)
+	BaudRate   int      // The serial port bitrate (aka Baudrate)
+	DataBits   int      // Size of the character (must be 5, 6, 7 or 8)
+	Parity     Parity   // Parity (see Parity type for more info)
+	StopBits   StopBits // Stop bits (see StopBits type for more info)
+	DisableDTR bool     // Do not send the enableDTR Flag on open
 }
 
 // Parity describes a serial port parity setting

@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"go.bug.st/serial.v1/unixutils"
+	"github.com/raceresult/go-serial/unixutils"
 )
 
 type unixPort struct {

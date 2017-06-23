@@ -4,9 +4,12 @@
 // license that can be found in the LICENSE file.
 //
 
-package serial
+package serial // import "go.bug.st/serial.v1"
 
 import "golang.org/x/sys/unix"
+
+const devFolder = "/dev"
+const regexFilter = "^(cu|tty)\\..*"
 
 // termios manipulation functions
 
@@ -30,6 +33,8 @@ var baudrateMap = map[int]uint32{
 	57600:  unix.B57600,
 	115200: unix.B115200,
 	230400: unix.B230400,
+	//460800: unix.B460800,
+	//921600: unix.B921600,
 }
 
 var databitsMap = map[int]uint32{
@@ -46,8 +51,12 @@ const tcIUCLC uint32 = 0
 const tcCCTS_OFLOW uint32 = 0x00010000
 const tcCRTS_IFLOW uint32 = 0x00020000
 
-const tcCRTSCTS uint32 = (tcCCTS_OFLOW | tcCRTS_IFLOW)
+const tcCRTSCTS uint32 = tcCCTS_OFLOW
 
-func toTermiosSpeedType(speed uint32) uint32 {
-	return speed
+const ioctlTcgetattr = unix.TIOCGETA
+const ioctlTcsetattr = unix.TIOCSETA
+const ioctlTcflsh = unix.TIOCFLUSH
+
+func toTermiosSpeedType(speed uint32) int32 {
+	return int32(speed)
 }

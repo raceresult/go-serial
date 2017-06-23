@@ -6,10 +6,11 @@
 
 package serial
 
-import "syscall"
+import "golang.org/x/sys/unix"
 
 const devFolder = "/dev"
 const regexFilter = "^(cu|tty)\\..*"
 
-const ioctlTcgetattr = syscall.TIOCGETA
-const ioctlTcsetattr = syscall.TIOCSETA
+const ioctlTcgetattr = unix.TIOCGETA
+const ioctlTcsetattr = unix.TIOCSETA
+const ioctlTcflsh = unix.TIOCFLUSH

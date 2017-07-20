@@ -15,8 +15,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
 	"github.com/raceresult/go-serial/unixutils"
+	"golang.org/x/sys/unix"
 )
 
 type unixPort struct {
@@ -33,7 +33,6 @@ func (port *unixPort) Close() error {
 	if err := unix.Close(port.handle); err != nil {
 		return err
 	}
-	port.opened = false
 
 	if port.closeSignal != nil {
 		// Send close signal to all pending reads (if any)
@@ -42,6 +41,9 @@ func (port *unixPort) Close() error {
 		// Wait for all readers to complete
 		port.closeLock.Lock()
 		defer port.closeLock.Unlock()
+
+		// set after lock has been optained
+		port.opened = false
 
 		// Close signaling pipe
 		if err := port.closeSignal.Close(); err != nil {

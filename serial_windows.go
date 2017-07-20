@@ -17,7 +17,11 @@ package serial
 
 */
 
-import "syscall"
+import (
+	"errors"
+	"fmt"
+	"syscall"
+)
 
 type windowsPort struct {
 	handle syscall.Handle
@@ -100,7 +104,13 @@ func (port *windowsPort) Read(p []byte) (int, error) {
 	}
 }
 
-func (port *windowsPort) Write(p []byte) (int, error) {
+func (port *windowsPort) Write(p []byte) (w int, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.New(fmt.Sprintf("panic recovered: %v", r))
+		}
+	}()
+
 	var writed uint32
 	ev, err := createOverlappedEvent()
 	if err != nil {

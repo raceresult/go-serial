@@ -18,7 +18,6 @@ package serial
 */
 
 import (
-	"errors"
 	"fmt"
 	"syscall"
 )
@@ -107,7 +106,7 @@ func (port *windowsPort) Read(p []byte) (int, error) {
 func (port *windowsPort) Write(p []byte) (w int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = errors.New(fmt.Sprintf("panic recovered: %v", r))
+			err = fmt.Errorf("panic recovered: %v", r)
 		}
 	}()
 

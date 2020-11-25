@@ -1,4 +1,4 @@
-module go.bug.st/serial
+module github.com/raceresult/go-serial
 
 go 1.13
 

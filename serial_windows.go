@@ -18,12 +18,14 @@ package serial
 */
 
 import (
-	"syscall"
+	"errors"
+	"fmt"
 	"sync"
+	"syscall"
 )
 
 type windowsPort struct {
-	mu sync.Mutex
+	mu     sync.Mutex
 	handle syscall.Handle
 }
 

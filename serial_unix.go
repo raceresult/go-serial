@@ -1,5 +1,5 @@
 //
-// Copyright 2014-2017 Cristian Maglie. All rights reserved.
+// Copyright 2014-2020 Cristian Maglie. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 //
@@ -13,9 +13,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"unsafe"
+	"sync/atomic"
 
-	"github.com/raceresult/go-serial/unixutils"
+	"go.bug.st/serial/unixutils"
 	"golang.org/x/sys/unix"
 )
 
@@ -24,10 +24,14 @@ type unixPort struct {
 
 	closeLock   sync.RWMutex
 	closeSignal *unixutils.Pipe
-	opened      bool
+	opened      uint32
 }
 
 func (port *unixPort) Close() error {
+	if !atomic.CompareAndSwapUint32(&port.opened, 1, 0) {
+		return nil
+	}
+
 	// Close port
 	port.releaseExclusiveAccess()
 	if err := unix.Close(port.handle); err != nil {
@@ -42,9 +46,6 @@ func (port *unixPort) Close() error {
 		port.closeLock.Lock()
 		defer port.closeLock.Unlock()
 
-		// set after lock has been optained
-		port.opened = false
-
 		// Close signaling pipe
 		if err := port.closeSignal.Close(); err != nil {
 			return err
@@ -53,34 +54,50 @@ func (port *unixPort) Close() error {
 	return nil
 }
 
-func (port *unixPort) Read(p []byte) (n int, err error) {
+func (port *unixPort) Read(p []byte) (int, error) {
 	port.closeLock.RLock()
 	defer port.closeLock.RUnlock()
-	if !port.opened {
+	if atomic.LoadUint32(&port.opened) != 1 {
 		return 0, &PortError{code: PortClosed}
 	}
 
 	fds := unixutils.NewFDSet(port.handle, port.closeSignal.ReadFD())
-	res, err := unixutils.Select(fds, nil, fds, -1)
-	if err != nil {
-		return 0, err
+	for {
+		res, err := unixutils.Select(fds, nil, fds, -1)
+		if err == unix.EINTR {
+			continue
+		}
+		if err != nil {
+			return 0, err
+		}
+		if res.IsReadable(port.closeSignal.ReadFD()) {
+			return 0, &PortError{code: PortClosed}
+		}
+		n, err := unix.Read(port.handle, p)
+		if err == unix.EINTR {
+			continue
+		}
+		if n < 0 { // Do not return -1 unix errors
+			n = 0
+		}
+		return n, err
 	}
-	if res.IsReadable(port.closeSignal.ReadFD()) {
-		return 0, &PortError{code: PortClosed}
-	}
-	return unix.Read(port.handle, p)
 }
 
 func (port *unixPort) Write(p []byte) (n int, err error) {
-	return unix.Write(port.handle, p)
+	n, err = unix.Write(port.handle, p)
+	if n < 0 { // Do not return -1 unix errors
+		n = 0
+	}
+	return
 }
 
 func (port *unixPort) ResetInputBuffer() error {
-	return ioctl(port.handle, ioctlTcflsh, unix.TCIFLUSH)
+	return unix.IoctlSetInt(port.handle, ioctlTcflsh, unix.TCIFLUSH)
 }
 
 func (port *unixPort) ResetOutputBuffer() error {
-	return ioctl(port.handle, ioctlTcflsh, unix.TCOFLUSH)
+	return unix.IoctlSetInt(port.handle, ioctlTcflsh, unix.TCOFLUSH)
 }
 
 func (port *unixPort) SetMode(mode *Mode) error {
@@ -155,7 +172,7 @@ func nativeOpen(portName string, mode *Mode) (*unixPort, error) {
 	}
 	port := &unixPort{
 		handle: h,
-		opened: true,
+		opened: 1,
 	}
 
 	// Setup serial port
@@ -379,29 +396,25 @@ func setRawMode(settings *unix.Termios) {
 // native syscall wrapper functions
 
 func (port *unixPort) getTermSettings() (*unix.Termios, error) {
-	settings := &unix.Termios{}
-	err := ioctl(port.handle, ioctlTcgetattr, uintptr(unsafe.Pointer(settings)))
-	return settings, err
+	return unix.IoctlGetTermios(port.handle, ioctlTcgetattr)
 }
 
 func (port *unixPort) setTermSettings(settings *unix.Termios) error {
-	return ioctl(port.handle, ioctlTcsetattr, uintptr(unsafe.Pointer(settings)))
+	return unix.IoctlSetTermios(port.handle, ioctlTcsetattr, settings)
 }
 
 func (port *unixPort) getModemBitsStatus() (int, error) {
-	var status int
-	err := ioctl(port.handle, unix.TIOCMGET, uintptr(unsafe.Pointer(&status)))
-	return status, err
+	return unix.IoctlGetInt(port.handle, unix.TIOCMGET)
 }
 
 func (port *unixPort) setModemBitsStatus(status int) error {
-	return ioctl(port.handle, unix.TIOCMSET, uintptr(unsafe.Pointer(&status)))
+	return unix.IoctlSetPointerInt(port.handle, unix.TIOCMSET, status)
 }
 
 func (port *unixPort) acquireExclusiveAccess() error {
-	return ioctl(port.handle, unix.TIOCEXCL, 0)
+	return unix.IoctlSetInt(port.handle, unix.TIOCEXCL, 0)
 }
 
 func (port *unixPort) releaseExclusiveAccess() error {
-	return ioctl(port.handle, unix.TIOCNXCL, 0)
+	return unix.IoctlSetInt(port.handle, unix.TIOCNXCL, 0)
 }

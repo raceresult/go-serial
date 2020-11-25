@@ -1,5 +1,5 @@
 //
-// Copyright 2014-2017 Cristian Maglie. All rights reserved.
+// Copyright 2014-2020 Cristian Maglie. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 //
@@ -18,12 +18,12 @@ package serial
 */
 
 import (
-	"errors"
-	"fmt"
 	"syscall"
+	"sync"
 )
 
 type windowsPort struct {
+	mu sync.Mutex
 	handle syscall.Handle
 }
 
@@ -34,7 +34,10 @@ func nativeGetPortsList() ([]string, error) {
 	}
 
 	var h syscall.Handle
-	if syscall.RegOpenKeyEx(syscall.HKEY_LOCAL_MACHINE, subKey, 0, syscall.KEY_READ, &h) != nil {
+	if err := syscall.RegOpenKeyEx(syscall.HKEY_LOCAL_MACHINE, subKey, 0, syscall.KEY_READ, &h); err != nil {
+		if errno, isErrno := err.(syscall.Errno); isErrno && errno == syscall.ERROR_FILE_NOT_FOUND {
+			return []string{}, nil
+		}
 		return nil, &PortError{code: ErrorEnumeratingPorts}
 	}
 	defer syscall.RegCloseKey(h)
@@ -59,12 +62,19 @@ func nativeGetPortsList() ([]string, error) {
 }
 
 func (port *windowsPort) Close() error {
+	port.mu.Lock()
+	defer func() {
+		port.handle = 0
+		port.mu.Unlock()
+	}()
+	if port.handle == 0 {
+		return nil
+	}
 	return syscall.CloseHandle(port.handle)
 }
 
 func (port *windowsPort) Read(p []byte) (int, error) {
 	var readed uint32
-	params := &dcb{}
 	ev, err := createOverlappedEvent()
 	if err != nil {
 		return 0, err
@@ -96,6 +106,7 @@ func (port *windowsPort) Read(p []byte) (int, error) {
 		// a serial port is alive in Windows is to check if the SetCommState
 		// function fails.
 
+		params := &dcb{}
 		getCommState(port.handle, params)
 		if err := setCommState(port.handle, params); err != nil {
 			port.Close()
@@ -276,15 +287,41 @@ func (port *windowsPort) SetMode(mode *Mode) error {
 }
 
 func (port *windowsPort) SetDTR(dtr bool) error {
-	var res bool
+	// Like for RTS there are problems with the escapeCommFunction
+	// observed behaviour was that DTR is set from false -> true
+	// when setting RTS from true -> false
+	// 1) Connect 		-> RTS = true 	(low) 	DTR = true 	(low) 	OKAY
+	// 2) SetDTR(false) -> RTS = true 	(low) 	DTR = false (heigh)	OKAY
+	// 3) SetRTS(false)	-> RTS = false 	(heigh)	DTR = true 	(low) 	ERROR: DTR toggled
+	//
+	// In addition this way the CommState Flags are not updated
+	/*
+		var res bool
+		if dtr {
+			res = escapeCommFunction(port.handle, commFunctionSetDTR)
+		} else {
+			res = escapeCommFunction(port.handle, commFunctionClrDTR)
+		}
+		if !res {
+			return &PortError{}
+		}
+		return nil
+	*/
+
+	// The following seems a more reliable way to do it
+
+	params := &dcb{}
+	if err := getCommState(port.handle, params); err != nil {
+		return &PortError{causedBy: err}
+	}
+	params.Flags &= dcbDTRControlDisableMask
 	if dtr {
-		res = escapeCommFunction(port.handle, commFunctionSetDTR)
-	} else {
-		res = escapeCommFunction(port.handle, commFunctionClrDTR)
+		params.Flags |= dcbDTRControlEnable
 	}
-	if !res {
-		return &PortError{}
+	if err := setCommState(port.handle, params); err != nil {
+		return &PortError{causedBy: err}
 	}
+
 	return nil
 }
 
@@ -293,6 +330,8 @@ func (port *windowsPort) SetRTS(rts bool) error {
 	// it doesn't send USB control message when the RTS bit is
 	// changed, so the following code not always works with
 	// USB-to-serial adapters.
+	//
+	// In addition this way the CommState Flags are not updated
 
 	/*
 		var res bool

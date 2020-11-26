@@ -1,12 +1,12 @@
 //
-// Copyright 2014-2017 Cristian Maglie. All rights reserved.
+// Copyright 2014-2020 Cristian Maglie. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 //
 
 package enumerator
 
-//go:generate go run ../extras/mksyscall_windows.go -output syscall_windows.go usb_windows.go
+//go:generate go run $GOROOT/src/syscall/mksyscall_windows.go -output syscall_windows.go usb_windows.go
 
 // PortDetails contains detailed information about USB serial port.
 // Use GetDetailedPortsList function to retrieve it.
@@ -18,7 +18,10 @@ type PortDetails struct {
 	SerialNumber string
 
 	// Manufacturer string
-	// Product      string
+
+	// Product is an OS-dependent string that describes the serial port, it may
+	// be not always available and it may be different across OS.
+	Product string
 }
 
 // GetDetailedPortsList retrieve ports details like USB VID/PID.
